@@ -8,6 +8,7 @@ import io.ktor.application.call
 import io.ktor.application.install
 import io.ktor.client.HttpClient
 import io.ktor.client.request.get
+import io.ktor.client.request.post
 import io.ktor.features.ContentNegotiation
 import io.ktor.http.HttpStatusCode
 import io.ktor.jackson.jackson
@@ -57,7 +58,26 @@ fun main() {
                     call.respond(HttpStatusCode.Unauthorized, e.message ?: "ERROR")
                 }
             }
-            post("direct") {
+            post("/createUser") {
+                val token: String = call.request.headers["Authorization"]?.substring(7)
+                    ?: throw RuntimeException("No authentication header")
+                val account: GoogleAccount = googleOAuthClient.authenticate(token)
+
+                if (DBUser().checkExternalIDExits(account.id)) call.respond(HttpStatusCode.BadRequest, "User does already exist")
+                val newId = DBUser().createUserMappingAndReturnID(account.id)
+
+                val httpClient = HttpClient()
+                httpClient.post<Any>("http://localhost:8090/createUser") {
+                    body = jacksonObjectMapper().writeValueAsString(User(
+                        id = newId.toString(),
+                        name = account.givenName,
+                        profilePictureURI = account.pictureURl
+                    ))
+                }
+
+                call.respond(HttpStatusCode.OK)
+            }
+            post("/direct") {
                 try {
                     val directID = call.receiveText();
                     println(directID)
