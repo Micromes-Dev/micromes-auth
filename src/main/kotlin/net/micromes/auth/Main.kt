@@ -52,7 +52,7 @@ fun main() {
                     val account: GoogleAccount = googleOAuthClient.authenticate(token)
                     val userID = DBUser().getUserIDByExternalID(account.id).toString()
 
-                    call.respond(createTokenForUserID(key, userID))
+                    call.respond(createTokenForUserID(key, Payload(sub = userID)))
                 } catch (e: RuntimeException) {
                     e.printStackTrace()
                     call.respond(HttpStatusCode.Unauthorized, e.message ?: "ERROR")
@@ -63,28 +63,20 @@ fun main() {
                     ?: throw RuntimeException("No authentication header")
                 val account: GoogleAccount = googleOAuthClient.authenticate(token)
 
+                val userName: String = call.request.queryParameters["name"] ?: throw RuntimeException("No name parameter")
+
                 if (DBUser().checkExternalIDExits(account.id)) call.respond(HttpStatusCode.BadRequest, "User does already exist")
                 val newId = DBUser().createUserMappingAndReturnID(account.id)
 
-                val httpClient = HttpClient()
-                httpClient.post<Any>("http://localhost:8090/createUser") {
-                    body = jacksonObjectMapper().writeValueAsString(User(
-                        id = newId.toString(),
-                        name = account.givenName,
-                        profilePictureURI = account.pictureURl
-                    ))
-                }
-
-                call.respond(HttpStatusCode.OK)
+                call.respond(HttpStatusCode.Created, createTokenForUserID(key, Payload(sub = newId.toString(), newUser = true, newName = userName)))
             }
             post("/direct") {
                 try {
-                    val directID = call.receiveText();
+                    val directID = call.receiveText()
                     println(directID)
                     val userID : String = DBUser().getUserIDByExternalID(directID)?.toString() ?: throw RuntimeException("does not exist")
-                    call.respond(createTokenForUserID(key, userID))
+                    call.respond(createTokenForUserID(key, Payload(sub = userID)))
                 } catch (e: RuntimeException) {
-                    e.printStackTrace()
                     call.respond(HttpStatusCode.Unauthorized, e.message ?: "ERROR")
                 }
             }
@@ -92,12 +84,7 @@ fun main() {
     }.start(true)
 }
 
-suspend fun createTokenForUserID(key: PrivateKey, userID: String) : String {
-
-    val httpClient = HttpClient()
-    val userRaw: String = httpClient.get("http://localhost:8090/getUserByID?id=${userID}")
-    val user: User = jacksonObjectMapper().readValue(userRaw)
-    val payload = Payload(user)
+fun createTokenForUserID(key: PrivateKey, payload: Payload) : String {
 
     return Jwts.builder()
         .setPayload(jacksonObjectMapper().writeValueAsString(payload))
