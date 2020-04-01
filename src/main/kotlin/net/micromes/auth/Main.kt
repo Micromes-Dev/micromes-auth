@@ -51,8 +51,9 @@ fun main() {
                         ?: throw RuntimeException("No authentication header")
                     val account: GoogleAccount = googleOAuthClient.authenticate(token)
                     val userID : Long? = DBUser().getUserIDByExternalID(account.id)
-                    if (userID == null) call.respond(HttpStatusCode.NotFound)
+                    if (userID == null) call.respond(HttpStatusCode(404, "User not found"))
                     else call.respond(createTokenForUserID(key, Payload(sub = userID.toString())))
+
                 } catch (e: RuntimeException) {
                     e.printStackTrace()
                     call.respond(HttpStatusCode.Unauthorized, e.message ?: "ERROR")
